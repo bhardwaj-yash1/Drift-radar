@@ -4,15 +4,27 @@ services:
   db:
     image: postgres:13
     restart: always
-    environment: # <--- Use the environment block directly
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=Yash@99968
-      - POSTGRES_DB=drift_radar_db
+    env_file: .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5433:5432"
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # This command pulls the model and then starts the server
+    command: ["/bin/sh", "-c", "ollama pull llama3 && ollama serve"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   api:
     build:
@@ -20,14 +32,17 @@ services:
       dockerfile: DockerFile.txt
     restart: on-failure
     depends_on:
-      - db
+      db:
+        condition: service_started
+      ollama:
+        condition: service_started
     env_file: .env
     ports:
       - "8000:8000"
     volumes:
       - .:/app
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
-  
+
   frontend:
     build:
       context: ./frontend
@@ -41,22 +56,9 @@ services:
       - ./frontend:/app
       - /app/node_modules
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
-  ollama:
-    image: ollama/ollama:latest
-    restart: always
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    command: ["serve"] # <-- THIS IS THE CRITICAL FIX
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
 
 volumes:
   postgres_data:
   ollama_data:
 
-      
+    
